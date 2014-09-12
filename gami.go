@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -194,11 +196,14 @@ func (a *Asterisk) readDispatcher() {
 		rc, err := r.Read(buf)
 
 		if err != nil { // network error
-			a.authorized = false // unauth
-
+			if err == io.EOF {
+				continue
+			}
+			a.authorized = false        // unauth
 			if a.netErrHandler != nil { // run network error callback
 				(*a.netErrHandler)(err)
 			}
+			log.Println(err)
 			return
 		}
 
