@@ -3,6 +3,7 @@ package gami
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 )
 
 type ConfigAction string
@@ -24,8 +25,26 @@ func (a *Asterisk) DefaultHandler(f *func(Message)) {
 	a.defaultHandler = f
 }
 
+// Opens connection to socket and assigns it to Asterisk instance
+func (a *Asterisk) connect() (err error) {
+	rAdrr, err := net.ResolveTCPAddr("tcp4", a.address)
+	if err != nil {
+		return
+	}
+	c, err := net.DialTCP("tcp", nil, rAdrr)
+	if err != nil {
+		return
+	}
+	a.conn = c
+	return
+}
+
 // Login, logins to AMI and starts read dispatcher
-func (a *Asterisk) Login(login string, password string) error {
+func (a *Asterisk) Start() (err error) {
+	err = a.connect()
+	if err != nil {
+		return
+	}
 
 	go a.readDispatcher()
 
@@ -43,21 +62,24 @@ func (a *Asterisk) Login(login string, password string) error {
 
 	m := Message{
 		"Action":   "Login",
-		"Username": login,
-		"Secret":   password,
+		"Username": a.login,
+		"Secret":   a.password,
 		"ActionID": aid,
 	}
 	a.send(m)
 
-	err := <-lhc
-
+	err = <-lhc
 	if err != nil {
-		return err
+		return
 	}
 
 	a.authorized = true
+	return
+}
 
-	return nil
+// Setter for network error handler, for now - didn't found better place for it
+func (a *Asterisk) SetNetErrHandler(f *func(error)) {
+	a.netErrHandler = f
 }
 
 // SendAction, universal action send

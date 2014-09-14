@@ -1,10 +1,9 @@
 package gami
 
 import (
-	"bufio"
+	// "bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -14,7 +13,7 @@ import (
 const (
 	_LINE_TERM    = "\r\n"            // packet line separator
 	_KEY_VAL_TERM = ":"               // header value separator
-	_READ_BUF     = 512               // buffer size for socket reader
+	_READ_BUF     = 1024              // buffer size for socket reader
 	_CMD_END      = "--END COMMAND--" // Asterisk command data end
 	_HOST         = "gami"            // default host value
 	ORIG_TMOUT    = 30000             // Originate timeout
@@ -133,7 +132,10 @@ func NewOriginateApp(channel, app, data string) *Originate {
 
 // main working entity
 type Asterisk struct {
-	conn           *net.Conn      // network connection to Asterisk
+	address        string         // string adress to host
+	login          string         // login for AMI
+	password       string         // password for AMI
+	conn           *net.TCPConn   // network connection to Asterisk
 	actionHandlers *cbList        // action response handle functions
 	eventHandlers  *cbList        // event handle functions
 	defaultHandler *func(Message) // default handler for all Asterisk messages, useful for debugging
@@ -143,10 +145,11 @@ type Asterisk struct {
 }
 
 // NewAsterisk, Asterisk factory
-func NewAsterisk(conn *net.Conn, f *func(error)) *Asterisk {
-
+func NewAsterisk(address, login, password string) *Asterisk {
 	return &Asterisk{
-		conn: conn,
+		address:  address,
+		login:    login,
+		password: password,
 		actionHandlers: &cbList{
 			&sync.RWMutex{},
 			make(map[string]*func(Message)),
@@ -157,8 +160,7 @@ func NewAsterisk(conn *net.Conn, f *func(error)) *Asterisk {
 			make(map[string]*func(Message)),
 			make(map[string]bool),
 		},
-		aid:           NewAid(),
-		netErrHandler: f,
+		aid: NewAid(),
 	}
 }
 
@@ -188,22 +190,18 @@ func (a *Asterisk) send(m Message) error {
 // readDispatcher, reads data from socket and builds messages
 func (a *Asterisk) readDispatcher() {
 
-	r := bufio.NewReader(*a.conn)
+	// r := bufio.NewReader(*a.conn)
 	pbuf := bytes.NewBufferString("") // data buffer
 	buf := make([]byte, _READ_BUF)    // read buffer
 
 	for {
-		rc, err := r.Read(buf)
-
+		rc, err := (*a.conn).Read(buf)
 		if err != nil { // network error
-			if err == io.EOF {
-				continue
-			}
+			log.Println("Error reading from socket:", err, string(buf))
 			a.authorized = false        // unauth
 			if a.netErrHandler != nil { // run network error callback
 				(*a.netErrHandler)(err)
 			}
-			log.Println(err)
 			return
 		}
 
