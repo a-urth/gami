@@ -1,7 +1,6 @@
 package gami
 
 import (
-	// "bufio"
 	"bytes"
 	"fmt"
 	"log"
@@ -13,11 +12,10 @@ import (
 const (
 	_LINE_TERM    = "\r\n"            // packet line separator
 	_KEY_VAL_TERM = ":"               // header value separator
-	_READ_BUF     = 1024              // buffer size for socket reader
+	_READ_BUF     = 8192              // buffer size for socket reader
 	_CMD_END      = "--END COMMAND--" // Asterisk command data end
 	_HOST         = "gami"            // default host value
 	ORIG_TMOUT    = 30000             // Originate timeout
-	VER           = 0.2
 )
 
 var (
@@ -187,84 +185,95 @@ func (a *Asterisk) send(m Message) error {
 	return nil
 }
 
-// readDispatcher, reads data from socket and builds messages
-func (a *Asterisk) readDispatcher() {
+func (a *Asterisk) read(pbuf *bytes.Buffer) error {
+	buf := make([]byte, _READ_BUF) // read buffer
+	rc, err := (*a.conn).Read(buf)
+	if err != nil { // network error
+		return err
+	}
 
-	// r := bufio.NewReader(*a.conn)
-	pbuf := bytes.NewBufferString("") // data buffer
-	buf := make([]byte, _READ_BUF)    // read buffer
+	wb, err := pbuf.Write(buf[:rc])
 
-	for {
-		rc, err := (*a.conn).Read(buf)
-		if err != nil { // network error
-			log.Println("Error reading from socket:", err, string(buf))
-			a.authorized = false        // unauth
-			if a.netErrHandler != nil { // run network error callback
-				(*a.netErrHandler)(err)
-			}
-			return
-		}
+	if err != nil || wb != rc { // can't write to data buffer, just skip
+		return nil
+	}
 
-		wb, err := pbuf.Write(buf[:rc])
+	// while has end of packet symbols in buffer
+	for pos := bytes.Index(pbuf.Bytes(), _PT_BYTES); pos != -1; pos = bytes.Index(pbuf.Bytes(), _PT_BYTES) {
 
-		if err != nil || wb != rc { // can't write to data buffer, just skip
+		bp := make([]byte, pos+len(_PT_BYTES))
+		r, err := pbuf.Read(bp)                    // reading packet to separate puffer
+		if err != nil || r != pos+len(_PT_BYTES) { // reading problems, just skip
 			continue
 		}
 
-		// while has end of packet symbols in buffer
-		for pos := bytes.Index(pbuf.Bytes(), _PT_BYTES); pos != -1; pos = bytes.Index(pbuf.Bytes(), _PT_BYTES) {
+		m := make(Message)
 
-			bp := make([]byte, pos+len(_PT_BYTES))
-			r, err := pbuf.Read(bp)                    // reading packet to separate puffer
-			if err != nil || r != pos+len(_PT_BYTES) { // reading problems, just skip
+		// splitting packet by line separator
+		for _, line := range bytes.Split(bp, []byte(_LINE_TERM)) {
+
+			// empty line
+			if len(line) == 0 {
 				continue
 			}
 
-			m := make(Message)
+			kvl := bytes.SplitN(line, []byte(_KEY_VAL_TERM), 2)
 
-			// splitting packet by line separator
-			for _, line := range bytes.Split(bp, []byte(_LINE_TERM)) {
-
-				// empty line
-				if len(line) == 0 {
-					continue
+			// not standard header
+			if len(kvl) == 1 {
+				if string(line) != _CMD_END {
+					m["CmdData"] += string(line)
 				}
-
-				kvl := bytes.SplitN(line, []byte(_KEY_VAL_TERM), 2)
-
-				// not standard header
-				if len(kvl) == 1 {
-					if string(line) != _CMD_END {
-						m["CmdData"] += string(line)
-					}
-					continue
-				}
-
-				k := bytes.TrimSpace(kvl[0])
-				v := bytes.TrimSpace(kvl[1])
-				m[string(k)] = string(v)
+				continue
 			}
 
-			// if has ActionID and has callback run it and delete
-			if v, vok := m["ActionID"]; vok {
-				if f, sd := a.actionHandlers.get(v); f != nil {
-					go (*f)(m)
-					if !sd { // will never remove "self-delete" callbacks
-						a.actionHandlers.del(v)
-					}
+			k := bytes.TrimSpace(kvl[0])
+			v := bytes.TrimSpace(kvl[1])
+			m[string(k)] = string(v)
+		}
+
+		// if has ActionID and has callback run it and delete
+		if v, vok := m["ActionID"]; vok {
+			if f, sd := a.actionHandlers.get(v); f != nil {
+				go (*f)(m)
+				if !sd { // will never remove "self-delete" callbacks
+					a.actionHandlers.del(v)
 				}
 			}
+		}
 
-			// if Event and has callback run it
-			if v, vok := m["Event"]; vok {
-				if f, _ := a.eventHandlers.get(v); f != nil {
-					go (*f)(m)
-				}
+		// if Event and has callback run it
+		if v, vok := m["Event"]; vok {
+			if f, _ := a.eventHandlers.get(v); f != nil {
+				go (*f)(m)
 			}
+		}
 
-			// run default handler if not nil
-			if a.defaultHandler != nil {
-				go (*a.defaultHandler)(m)
+		// run default handler if not nil
+		if a.defaultHandler != nil {
+			go (*a.defaultHandler)(m)
+		}
+	}
+	return nil
+}
+
+// readDispatcher, reads data from socket and builds messages
+func (a *Asterisk) readDispatcher(finishChann <-chan struct{}) {
+	pbuf := bytes.NewBufferString("") // data buffer
+	for {
+		select {
+		case <-finishChann:
+			a.conn.Close()
+			log.Println("Finalizing ami read events")
+			return
+		default:
+			if err := a.read(pbuf); err != nil {
+				log.Println("Error reading from socket:", err)
+				a.authorized = false        // unauth
+				if a.netErrHandler != nil { // run network error callback
+					(*a.netErrHandler)(err)
+				}
+				return
 			}
 		}
 	}

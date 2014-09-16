@@ -8,6 +8,8 @@ import (
 
 type ConfigAction string
 
+var FINISH_CAHNN chan struct{}
+
 const (
 	ConfNewCat    ConfigAction = "NewCat"
 	ConfRenameCat ConfigAction = "RenameCat"
@@ -41,12 +43,14 @@ func (a *Asterisk) connect() (err error) {
 
 // Login, logins to AMI and starts read dispatcher
 func (a *Asterisk) Start() (err error) {
+	FINISH_CAHNN = make(chan struct{})
+
 	err = a.connect()
 	if err != nil {
 		return
 	}
 
-	go a.readDispatcher()
+	go a.readDispatcher(FINISH_CAHNN)
 
 	lhc := make(chan error)
 	lhf := func(m Message) {
@@ -150,11 +154,10 @@ func (a Asterisk) Redirect(channel string, context string, exten string, priorit
 
 // Logoff, logoff from AMI
 func (a Asterisk) Logoff() error {
-
+	defer close(FINISH_CAHNN)
 	m := Message{
 		"Action": "Logoff",
 	}
-
 	return a.SendAction(m, nil)
 }
 
