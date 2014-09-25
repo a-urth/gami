@@ -211,7 +211,6 @@ func (a *Asterisk) read(pbuf *bytes.Buffer) error {
 
 		// splitting packet by line separator
 		for _, line := range bytes.Split(bp, []byte(_LINE_TERM)) {
-
 			// empty line
 			if len(line) == 0 {
 				continue
@@ -263,8 +262,8 @@ func (a *Asterisk) readDispatcher(finishChann <-chan struct{}) {
 	for {
 		select {
 		case <-finishChann:
-			a.conn.Close()
 			log.Println("Finalizing ami read events")
+			a.conn.Close()
 			return
 		default:
 			if err := a.read(pbuf); err != nil {

@@ -176,14 +176,11 @@ func (a *Asterisk) Originate(o *Originate, vars map[string]string, f *func(Messa
 		m["Async"] = "yes"
 	}
 
-	if o.Context == "" {
-		m["Application"] = o.Application
-		m["Data"] = o.Data
-	} else {
-		m["Context"] = o.Context
-		m["Exten"] = o.Exten
-		m["Priority"] = o.Priority
-	}
+	m["Application"] = o.Application
+	m["Data"] = o.Data
+	m["Context"] = o.Context
+	m["Exten"] = o.Exten
+	m["Priority"] = o.Priority
 
 	if vars != nil {
 		var vl string
