@@ -253,6 +253,7 @@ func (a *Asterisk) read(pbuf *bytes.Buffer) error {
 			go (*a.defaultHandler)(m)
 		}
 	}
+	buf = nil
 	return nil
 }
 
