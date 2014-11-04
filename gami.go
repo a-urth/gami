@@ -185,22 +185,21 @@ func (a *Asterisk) send(m Message) error {
 	return nil
 }
 
-func (a *Asterisk) read(pbuf *bytes.Buffer) error {
-	buf := make([]byte, _READ_BUF) // read buffer
-	rc, err := (*a.conn).Read(buf)
+func (a *Asterisk) read(pbuf *bytes.Buffer, buf *[]byte) error {
+	rc, err := (*a.conn).Read(*buf)
 	if err != nil { // network error
 		return err
 	}
 
-	wb, err := pbuf.Write(buf[:rc])
+	wb, err := pbuf.Write((*buf)[:rc])
 
 	if err != nil || wb != rc { // can't write to data buffer, just skip
 		return nil
 	}
 
 	// while has end of packet symbols in buffer
-	for pos := bytes.Index(pbuf.Bytes(), _PT_BYTES); pos != -1; pos = bytes.Index(pbuf.Bytes(), _PT_BYTES) {
-
+	initial := bytes.Index(pbuf.Bytes(), _PT_BYTES)
+	for pos := initial; pos != -1; pos = bytes.Index(pbuf.Bytes(), _PT_BYTES) {
 		bp := make([]byte, pos+len(_PT_BYTES))
 		r, err := pbuf.Read(bp)                    // reading packet to separate puffer
 		if err != nil || r != pos+len(_PT_BYTES) { // reading problems, just skip
@@ -260,6 +259,7 @@ func (a *Asterisk) read(pbuf *bytes.Buffer) error {
 // readDispatcher, reads data from socket and builds messages
 func (a *Asterisk) readDispatcher(finishChann <-chan struct{}) {
 	pbuf := bytes.NewBufferString("") // data buffer
+	buf := make([]byte, _READ_BUF)    // read buffer
 	for {
 		select {
 		case <-finishChann:
@@ -267,7 +267,7 @@ func (a *Asterisk) readDispatcher(finishChann <-chan struct{}) {
 			a.conn.Close()
 			return
 		default:
-			if err := a.read(pbuf); err != nil {
+			if err := a.read(pbuf, &buf); err != nil {
 				log.Println("Error reading from socket:", err)
 				a.authorized = false        // unauth
 				if a.netErrHandler != nil { // run network error callback
