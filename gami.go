@@ -214,7 +214,6 @@ func (a *Asterisk) read(pbuf *bytes.Buffer, buf *[]byte) error {
 			if len(line) == 0 {
 				continue
 			}
-
 			kvl := bytes.SplitN(line, []byte(_KEY_VAL_TERM), 2)
 
 			// not standard header
@@ -229,7 +228,6 @@ func (a *Asterisk) read(pbuf *bytes.Buffer, buf *[]byte) error {
 			v := bytes.TrimSpace(kvl[1])
 			m[string(k)] = string(v)
 		}
-
 		// if has ActionID and has callback run it and delete
 		if v, vok := m["ActionID"]; vok {
 			if f, sd := a.actionHandlers.get(v); f != nil {
