@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"strings"
 )
 
 const (
@@ -24,6 +25,14 @@ var (
 
 // basic Asterisk message
 type Message map[string]string
+
+func (m Message) String() string {
+	res := []string{"\n"}
+	for k, v := range m {
+		res = append(res, fmt.Sprintf("\t%s:%s%s", k, strings.Repeat(" ", 20 - len(k)), v))
+	}
+	return strings.Join(res, "\n")
+}
 
 // action id generator
 type Aid struct {
