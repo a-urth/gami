@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"sync"
 	"strings"
 )
@@ -26,9 +27,16 @@ var (
 // basic Asterisk message
 type Message map[string]string
 
+// Nice output with sorted keys
 func (m Message) String() string {
 	res := []string{"\n"}
-	for k, v := range m {
+	keys := []string{}
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := m[k]
 		res = append(res, fmt.Sprintf("\t%s:%s%s", k, strings.Repeat(" ", 20 - len(k)), v))
 	}
 	return strings.Join(res, "\n")
